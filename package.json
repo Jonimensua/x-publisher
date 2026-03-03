@@ -1,0 +1,6 @@
+git init
+git add .
+git commit -m "Initial x publisher"
+git branch -M main
+git remote add origin https://github.com/Jonimensua/x-publisher.git
+git push -u origin main
