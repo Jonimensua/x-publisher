@@ -1,6 +1,14 @@
-git init
-git add .
-git commit -m "Initial x publisher"
-git branch -M main
-git remote add origin https://github.com/Jonimensua/x-publisher.git
-git push -u origin main
+{
+  "name": "x-publisher",
+  "version": "1.0.0",
+  "description": "X Publisher with Playwright",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "playwright": "^1.42.0"
+  }
+}
