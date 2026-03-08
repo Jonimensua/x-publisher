@@ -1,75 +1,57 @@
-const express = require("express");
-const { chromium } = require("playwright");
-
-const app = express();
-app.use(express.json());
-
-let browser;
-let context;
-let page;
-let queue = Promise.resolve(); // cola simple para evitar concurrencia
-
-async function initBrowser() {
-  console.log("Starting persistent browser...");
-
-  browser = await chromium.launch({
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage"
-    ]
-  });
-
-  context = await browser.newContext({
-    storageState: "auth.json"
-  });
-
-  page = await context.newPage();
-
-  await page.goto("https://typefully.com/write", {
-    waitUntil: "networkidle"
-  });
-
-  await page.waitForSelector('[contenteditable="true"]', { timeout: 60000 });
-
-  console.log("Typefully editor ready");
-}
-
-async function publish(content) {
-  console.log("Publishing:", content);
-
-  const editor = await page.locator('[contenteditable="true"]').first();
-
-  await editor.click();
-
-  await page.keyboard.type(content);
-
-  await page.waitForTimeout(3000); // esperar autoguardado
-
-  console.log("Post inserted");
-}
-
-app.post("/post", async (req, res) => {
-  const content = req.body.content;
-
-  if (!content) {
-    return res.status(400).json({ error: "Missing content" });
-  }
-
-  // añadir a cola para que no se ejecuten varios a la vez
-  queue = queue.then(() => publish(content)).catch(err => {
-    console.error("Publish error:", err);
-  });
-
-  res.json({ queued: true });
-});
-
-app.get("/", (req, res) => {
-  res.send("X Publisher running");
-});
-
-app.listen(3000, async () => {
-  console.log("🚀 X Publisher running on port 3000");
-  await initBrowser();
-});
+const express = require("express"); 
+const { chromium } = require("playwright"); 
+ 
+const app = express(); 
+app.use(express.json()); 
+ 
+app.post("/post", async (req, res) => { 
+  try { 
+    let content = req.body.content; 
+ 
+    if (!content) { 
+      return res.status(400).json({ error: "No content provided" }); 
+    } 
+ 
+    // Limitar longitud para Typefully 
+    content = content.slice(0, 270); 
+ 
+    console.log("Publishing to Typefully:", content); 
+ 
+    const browser = await chromium.launch({ 
+      headless: true, 
+      args: [ 
+        "--no-sandbox", 
+        "--disable-setuid-sandbox", 
+        "--disable-dev-shm-usage", 
+        "--disable-gpu", 
+        "--single-process" 
+      ] 
+}); 
+const context = await browser.newContext({ 
+storageState: "auth.json" 
+}); 
+const page = await context.newPage(); 
+await page.goto("https://typefully.com", { 
+waitUntil: "domcontentloaded", 
+timeout: 60000 
+}); 
+// esperar editor 
+await page.waitForSelector('[contenteditable="true"]', { 
+timeout: 60000 
+}); 
+await page.fill('[contenteditable="true"]', content); 
+// botón publicar 
+const publishButton = page.locator("button:has-text('Publish')"); 
+await publishButton.click(); 
+await page.waitForTimeout(2000); 
+await browser.close(); 
+res.json({ success: true }); 
+} catch (error) { 
+console.error("PUBLISH ERROR:", error); 
+res.status(500).json({ error: error.toString() }); 
+} 
+}); 
+app.listen(3000, () => { 
+console.log("          
+}); 
+X Publisher running on port 3000");
