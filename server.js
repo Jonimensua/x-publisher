@@ -7,10 +7,10 @@ app.use(express.json());
 let browser;
 let context;
 let page;
+let queue = Promise.resolve(); // cola simple para evitar concurrencia
 
 async function initBrowser() {
-
-  console.log("Starting browser...");
+  console.log("Starting persistent browser...");
 
   browser = await chromium.launch({
     headless: true,
@@ -31,40 +31,38 @@ async function initBrowser() {
     waitUntil: "networkidle"
   });
 
-  console.log("Typefully ready");
+  await page.waitForSelector('[contenteditable="true"]', { timeout: 60000 });
 
+  console.log("Typefully editor ready");
+}
+
+async function publish(content) {
+  console.log("Publishing:", content);
+
+  const editor = await page.locator('[contenteditable="true"]').first();
+
+  await editor.click();
+
+  await page.keyboard.type(content);
+
+  await page.waitForTimeout(3000); // esperar autoguardado
+
+  console.log("Post inserted");
 }
 
 app.post("/post", async (req, res) => {
+  const content = req.body.content;
 
-  try {
-
-    const content = req.body.content;
-
-    if (!content) {
-      return res.status(400).json({ error: "Missing content" });
-    }
-
-    console.log("Publishing:", content);
-
-    await page.click('[contenteditable="true"]');
-
-    await page.keyboard.type(content);
-
-    console.log("Post inserted");
-
-    await page.waitForTimeout(3000);
-
-    res.json({ success: true });
-
-  } catch (err) {
-
-    console.error("PUBLISH ERROR:", err);
-
-    res.status(500).json({ error: err.message });
-
+  if (!content) {
+    return res.status(400).json({ error: "Missing content" });
   }
 
+  // añadir a cola para que no se ejecuten varios a la vez
+  queue = queue.then(() => publish(content)).catch(err => {
+    console.error("Publish error:", err);
+  });
+
+  res.json({ queued: true });
 });
 
 app.get("/", (req, res) => {
@@ -72,9 +70,6 @@ app.get("/", (req, res) => {
 });
 
 app.listen(3000, async () => {
-
   console.log("🚀 X Publisher running on port 3000");
-
   await initBrowser();
-
 });
