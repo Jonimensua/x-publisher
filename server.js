@@ -2,53 +2,58 @@ const express = require("express");
 const { chromium } = require("playwright");
 
 const app = express();
-
 app.use(express.json());
+
+let browser;
+let context;
+let page;
+
+async function initBrowser() {
+
+  console.log("Starting browser...");
+
+  browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage"
+    ]
+  });
+
+  context = await browser.newContext({
+    storageState: "auth.json"
+  });
+
+  page = await context.newPage();
+
+  await page.goto("https://typefully.com/write", {
+    waitUntil: "networkidle"
+  });
+
+  console.log("Typefully ready");
+
+}
 
 app.post("/post", async (req, res) => {
 
-  const content = req.body.content;
-
-  if (!content) {
-    return res.status(400).json({ error: "Missing content" });
-  }
-
   try {
 
-    console.log("Publishing to Typefully:", content);
+    const content = req.body.content;
 
-    const browser = await chromium.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
-    });
+    if (!content) {
+      return res.status(400).json({ error: "Missing content" });
+    }
 
-    const context = await browser.newContext({
-      storageState: "auth.json"
-    });
+    console.log("Publishing:", content);
 
-    const page = await context.newPage();
-
-    // abrir editor real de Typefully
-    await page.goto("https://typefully.com/write", {
-      waitUntil: "networkidle"
-    });
-
-    // esperar editor
-    await page.waitForSelector('[data-testid="draft-editor"]', {
-      timeout: 60000
-    });
-
-    // escribir contenido
-    await page.click('[data-testid="draft-editor"]');
+    await page.click('[contenteditable="true"]');
 
     await page.keyboard.type(content);
 
-    console.log("Content typed");
+    console.log("Post inserted");
 
-    // esperar guardado automático
-    await page.waitForTimeout(4000);
-
-    await browser.close();
+    await page.waitForTimeout(3000);
 
     res.json({ success: true });
 
@@ -56,9 +61,7 @@ app.post("/post", async (req, res) => {
 
     console.error("PUBLISH ERROR:", err);
 
-    res.status(500).json({
-      error: err.message
-    });
+    res.status(500).json({ error: err.message });
 
   }
 
@@ -68,6 +71,10 @@ app.get("/", (req, res) => {
   res.send("X Publisher running");
 });
 
-app.listen(3000, () => {
+app.listen(3000, async () => {
+
   console.log("🚀 X Publisher running on port 3000");
+
+  await initBrowser();
+
 });
