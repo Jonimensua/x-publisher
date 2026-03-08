@@ -1,20 +1,25 @@
 const express = require("express");
-require("dotenv").config();
 const { chromium } = require("playwright");
 
 const app = express();
+
 app.use(express.json());
 
 app.post("/post", async (req, res) => {
-  const { content } = req.body;
+
+  const content = req.body.content;
 
   if (!content) {
     return res.status(400).json({ error: "Missing content" });
   }
 
   try {
+
+    console.log("Publishing to Typefully:", content);
+
     const browser = await chromium.launch({
-      headless: true
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
 
     const context = await browser.newContext({
@@ -23,25 +28,44 @@ app.post("/post", async (req, res) => {
 
     const page = await context.newPage();
 
-    await page.goto("https://typefully.com");
+    // abrir editor real de Typefully
+    await page.goto("https://typefully.com/write", {
+      waitUntil: "networkidle"
+    });
 
-    await page.waitForSelector('[contenteditable="true"]', { timeout: 60000 });
+    // esperar editor
+    await page.waitForSelector('[data-testid="draft-editor"]', {
+      timeout: 60000
+    });
 
-    await page.click('[contenteditable="true"]');
+    // escribir contenido
+    await page.click('[data-testid="draft-editor"]');
+
     await page.keyboard.type(content);
 
-    await page.waitForTimeout(5000);
+    console.log("Content typed");
+
+    // esperar guardado automático
+    await page.waitForTimeout(4000);
 
     await browser.close();
 
-    res.json({
-      success: true
+    res.json({ success: true });
+
+  } catch (err) {
+
+    console.error("PUBLISH ERROR:", err);
+
+    res.status(500).json({
+      error: err.message
     });
 
-  } catch (error) {
-    console.error("PUBLISH ERROR:", error);
-    res.status(500).json({ error: error.message });
   }
+
+});
+
+app.get("/", (req, res) => {
+  res.send("X Publisher running");
 });
 
 app.listen(3000, () => {
