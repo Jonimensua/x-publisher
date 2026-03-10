@@ -1,23 +1,26 @@
 const express = require("express");
 const { chromium } = require("playwright");
+const fs = require("fs");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
-let browser;
-let page;
+app.post("/post", async (req, res) => {
+  const content = req.body.content;
 
-async function initBrowser() {
+  console.log("Publishing to Typefully:\n", content);
 
-  if (!browser) {
+  try {
 
-    browser = await chromium.launch({
+    const browser = await chromium.launch({
       headless: true,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
-        "--disable-gpu"
+        "--disable-gpu",
+        "--single-process",
+        "--no-zygote"
       ]
     });
 
@@ -25,54 +28,35 @@ async function initBrowser() {
       storageState: "auth.json"
     });
 
-    page = await context.newPage();
+    const page = await context.newPage();
 
-    await page.goto("https://typefully.com", {
+    await page.goto("https://typefully.com/?compose=true", {
       waitUntil: "domcontentloaded"
     });
 
-    console.log("Typefully session ready");
-  }
-}
+    await page.waitForTimeout(3000);
 
-app.post("/post", async (req, res) => {
+    await page.locator('[contenteditable="true"]').first().fill(content);
 
-  try {
+    await page.waitForTimeout(2000);
 
-    await initBrowser();
-
-    let content = req.body.content;
-
-    if (!content) {
-      return res.status(400).json({ error: "No content" });
-    }
-
-    content = content.slice(0, 260);
-
-    console.log("Publishing to Typefully:", content);
-
-    await page.waitForSelector('[contenteditable="true"]', { timeout: 60000 });
-
-    await page.fill('[contenteditable="true"]', content);
-
-    await page.waitForTimeout(1500);
-
-    const publishButton = page.locator("button:has-text('Publish')");
-
-    await publishButton.click({ force: true });
+    await page.locator("button:has-text('Publish')").first().click();
 
     await page.waitForTimeout(3000);
 
+    await browser.close();
+
     res.json({ success: true });
 
-  } catch (error) {
+  } catch (err) {
 
-    console.error("PUBLISH ERROR:", error);
+    console.error("PUBLISH ERROR:", err);
 
-    res.status(500).json({ error: error.toString() });
+    res.status(500).json({
+      error: err.toString()
+    });
 
   }
-
 });
 
 app.listen(3000, () => {
