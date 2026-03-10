@@ -2,7 +2,7 @@ const express = require("express");
 const { chromium } = require("playwright");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 let browser;
 let page;
@@ -17,7 +17,9 @@ async function startBrowser() {
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
-        "--disable-gpu"
+        "--disable-gpu",
+        "--single-process",
+        "--no-zygote"
       ]
     });
 
@@ -31,6 +33,8 @@ async function startBrowser() {
       waitUntil: "domcontentloaded"
     });
 
+    await page.waitForTimeout(3000);
+
     console.log("Typefully ready");
   }
 }
@@ -39,23 +43,38 @@ app.post("/post", async (req, res) => {
 
   const content = req.body.content;
 
+  console.log("Publishing to Typefully:\n", content);
+
   try {
 
     await startBrowser();
 
-    console.log("Publishing:", content);
+    await page.waitForSelector('[contenteditable="true"]');
 
-    await page.fill('[contenteditable="true"]', "");
+    const editor = page.locator('[contenteditable="true"]').first();
 
-    await page.fill('[contenteditable="true"]', content);
+    await editor.click();
 
-    await page.click("button:has-text('Publish')");
+    await editor.fill("");
+
+    await editor.type(content, { delay: 10 });
+
+    await page.waitForTimeout(2000);
+
+    await page.waitForSelector("button:has-text('Publish')");
+
+    await page.locator("button:has-text('Publish')").first().click({
+      force: true,
+      timeout: 60000
+    });
+
+    await page.waitForTimeout(3000);
 
     res.json({ success: true });
 
   } catch (err) {
 
-    console.log("Publish error:", err);
+    console.error("PUBLISH ERROR:", err);
 
     res.status(500).json({
       error: err.toString()
@@ -65,8 +84,10 @@ app.post("/post", async (req, res) => {
 
 });
 
+app.get("/", (req, res) => {
+  res.send("X Publisher running");
+});
+
 app.listen(3000, () => {
-
-  console.log("X Publisher running");
-
+  console.log("🚀 X Publisher running on port 3000");
 });
