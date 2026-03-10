@@ -2,26 +2,22 @@ const express = require("express");
 const { chromium } = require("playwright");
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json());
 
-app.post("/post", async (req, res) => {
+let browser;
+let page;
 
-  const content = req.body.content;
+async function startBrowser() {
 
-  console.log("Publishing to Typefully:\n", content);
+  if (!browser) {
 
-  try {
-
-    const browser = await chromium.launch({
+    browser = await chromium.launch({
       headless: true,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-zygote",
-        "--single-process",
-        "--disable-software-rasterizer"
+        "--disable-gpu"
       ]
     });
 
@@ -29,39 +25,40 @@ app.post("/post", async (req, res) => {
       storageState: "auth.json"
     });
 
-    const page = await context.newPage();
+    page = await context.newPage();
 
     await page.goto("https://typefully.com/?compose=true", {
-      waitUntil: "domcontentloaded",
-      timeout: 60000
+      waitUntil: "domcontentloaded"
     });
 
-    // esperar editor
-    await page.waitForSelector('[contenteditable="true"]', { timeout: 30000 });
+    console.log("Typefully ready");
+  }
+}
 
-    const editor = page.locator('[contenteditable="true"]').first();
+app.post("/post", async (req, res) => {
 
-    await editor.fill(content);
+  const content = req.body.content;
 
-    await page.waitForTimeout(2000);
+  try {
 
-    // botón publish
-    const publishButton = page.locator("button:has-text('Publish')");
+    await startBrowser();
 
-    await publishButton.first().click();
+    console.log("Publishing:", content);
 
-    await page.waitForTimeout(4000);
+    await page.fill('[contenteditable="true"]', "");
 
-    await browser.close();
+    await page.fill('[contenteditable="true"]', content);
+
+    await page.click("button:has-text('Publish')");
 
     res.json({ success: true });
 
-  } catch (error) {
+  } catch (err) {
 
-    console.error("PUBLISH ERROR:", error);
+    console.log("Publish error:", err);
 
     res.status(500).json({
-      error: error.toString()
+      error: err.toString()
     });
 
   }
@@ -69,5 +66,7 @@ app.post("/post", async (req, res) => {
 });
 
 app.listen(3000, () => {
-  console.log("🚀 X Publisher running on port 3000");
+
+  console.log("X Publisher running");
+
 });
