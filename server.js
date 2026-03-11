@@ -5,6 +5,7 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 let browser;
+let context;
 let page;
 
 async function startBrowser() {
@@ -23,17 +24,18 @@ async function startBrowser() {
       ]
     });
 
-    const context = await browser.newContext({
+    context = await browser.newContext({
       storageState: "auth.json"
     });
 
     page = await context.newPage();
 
-    await page.goto("https://typefully.com/?compose=true", {
+    await page.goto("https://typefully.com/app/new", {
       waitUntil: "domcontentloaded"
     });
 
-    await page.waitForTimeout(3000);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(4000);
 
     console.log("Typefully ready");
   }
@@ -43,15 +45,22 @@ app.post("/post", async (req, res) => {
 
   const content = req.body.content;
 
-  console.log("Publishing to Typefully:\n", content);
+  console.log("Publishing to Typefully:");
+  console.log(content);
 
   try {
 
     await startBrowser();
 
-    await page.waitForSelector('[contenteditable="true"]');
+    await page.goto("https://typefully.com/app/new", {
+      waitUntil: "domcontentloaded"
+    });
+
+    await page.waitForTimeout(4000);
 
     const editor = page.locator('[contenteditable="true"]').first();
+
+    await editor.waitFor({ timeout: 60000 });
 
     await editor.click();
 
@@ -61,14 +70,15 @@ app.post("/post", async (req, res) => {
 
     await page.waitForTimeout(2000);
 
-    await page.waitForSelector("button:has-text('Publish')");
+    const publishButton = page.locator("button:has-text('Publish')").first();
 
-    await page.locator("button:has-text('Publish')").first().click({
-      force: true,
-      timeout: 60000
+    await publishButton.waitFor({ timeout: 60000 });
+
+    await publishButton.click({
+      force: true
     });
 
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(4000);
 
     res.json({ success: true });
 
