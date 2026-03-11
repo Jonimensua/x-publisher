@@ -1,98 +1,166 @@
-const express = require("express");
-const { chromium } = require("playwright");
+import requests
+import time
+import os
 
-const app = express();
-app.use(express.json({ limit: "1mb" }));
+BASE_RPC = "https://mainnet.base.org"
 
-let browser;
-let context;
-let page;
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
-async function startBrowser() {
+PUBLISHER_URL = os.getenv("PUBLISHER_URL")
 
-  if (!browser) {
+# filtro de contratos basura
+GAS_THRESHOLD = 1500000
 
-    browser = await chromium.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--single-process",
-        "--no-zygote"
-      ]
-    });
+# evitar duplicados
+seen_contracts = set()
 
-    context = await browser.newContext({
-      storageState: "auth.json"
-    });
 
-    page = await context.newPage();
+def enviar_telegram(texto):
 
-    console.log("Opening Typefully");
+    if not TELEGRAM_TOKEN or not CHAT_ID:
+        print("Telegram not configured")
+        return
 
-    await page.goto("https://typefully.com/?compose=true", {
-      waitUntil: "domcontentloaded"
-    });
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
-    await page.waitForTimeout(5000);
+    data = {
+        "chat_id": CHAT_ID,
+        "text": texto
+    }
 
-    console.log("Typefully ready");
-  }
-}
+    try:
+        r = requests.post(url, data=data)
+        print("Telegram response:", r.text)
+    except Exception as e:
+        print("Telegram error:", e)
 
-app.post("/post", async (req, res) => {
 
-  const content = req.body.content;
+def enviar_publisher(texto):
 
-  console.log("Publishing to Typefully:");
-  console.log(content);
+    if not PUBLISHER_URL:
+        print("Publisher URL not set")
+        return
 
-  try {
+    try:
 
-    await startBrowser();
+        r = requests.post(
+            PUBLISHER_URL,
+            json={"content": texto}
+        )
 
-    await page.goto("https://typefully.com/?compose=true");
+        print("Publisher status:", r.status_code)
 
-    await page.waitForTimeout(5000);
+    except Exception as e:
+        print("Publisher error:", e)
 
-    const editor = page.locator('[contenteditable="true"]').first();
 
-    await editor.click();
+def rpc_call(method, params):
 
-    await editor.fill("");
+    payload = {
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+        "id": 1
+    }
 
-    await editor.type(content, { delay: 10 });
+    try:
+        r = requests.post(BASE_RPC, json=payload)
+        return r.json()["result"]
+    except:
+        return None
 
-    await page.waitForTimeout(2000);
 
-    const publishButton = page.locator("button:has-text('Publish')").first();
+def get_latest_block():
 
-    await publishButton.click({
-      force: true
-    });
+    result = rpc_call("eth_blockNumber", [])
 
-    await page.waitForTimeout(4000);
+    if result:
+        return int(result, 16)
 
-    res.json({ success: true });
+    return None
 
-  } catch (err) {
 
-    console.error("PUBLISH ERROR:", err);
+def get_block(num):
 
-    res.status(500).json({
-      error: err.toString()
-    });
+    return rpc_call(
+        "eth_getBlockByNumber",
+        [hex(num), True]
+    )
 
-  }
 
-});
+def main():
 
-app.get("/", (req, res) => {
-  res.send("Publisher running");
-});
+    print("🔥 Base Contract Monitor iniciado")
 
-app.listen(3000, () => {
-  console.log("🚀 X Publisher running on port 3000");
-});
+    ultimo_bloque = get_latest_block()
+
+    if not ultimo_bloque:
+        print("Error getting initial block")
+        return
+
+    while True:
+
+        try:
+
+            time.sleep(10)
+
+            bloque_actual = get_latest_block()
+
+            if not bloque_actual:
+                continue
+
+            if bloque_actual > ultimo_bloque:
+
+                block_data = get_block(bloque_actual)
+
+                if not block_data:
+                    continue
+
+                for tx in block_data["transactions"]:
+
+                    if tx["to"] is None:
+
+                        gas_used = int(tx["gas"], 16)
+
+                        if gas_used < GAS_THRESHOLD:
+                            continue
+
+                        contract_hash = tx["hash"]
+
+                        if contract_hash in seen_contracts:
+                            continue
+
+                        seen_contracts.add(contract_hash)
+
+                        valor_eth = int(tx["value"], 16) / (10**18)
+
+                        mensaje = f"""
+🚨 BASE CONTRACT DEPLOYED
+
+Gas Used: {gas_used}
+ETH Value: {valor_eth}
+
+Tx
+https://basescan.org/tx/{contract_hash}
+
+#Base #OnChain
+"""
+
+                        print(mensaje)
+
+                        enviar_telegram(mensaje)
+
+                        enviar_publisher(mensaje)
+
+                ultimo_bloque = bloque_actual
+
+        except Exception as e:
+
+            print("Main loop error:", e)
+
+            time.sleep(5)
+
+
+if __name__ == "__main__":
+    main()
