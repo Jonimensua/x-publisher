@@ -30,12 +30,13 @@ async function startBrowser() {
 
     page = await context.newPage();
 
-    await page.goto("https://typefully.com/app/new", {
+    console.log("Opening Typefully");
+
+    await page.goto("https://typefully.com/?compose=true", {
       waitUntil: "domcontentloaded"
     });
 
-    await page.waitForLoadState("networkidle");
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(5000);
 
     console.log("Typefully ready");
   }
@@ -52,15 +53,11 @@ app.post("/post", async (req, res) => {
 
     await startBrowser();
 
-    await page.goto("https://typefully.com/app/new", {
-      waitUntil: "domcontentloaded"
-    });
+    await page.goto("https://typefully.com/?compose=true");
 
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(5000);
 
     const editor = page.locator('[contenteditable="true"]').first();
-
-    await editor.waitFor({ timeout: 60000 });
 
     await editor.click();
 
@@ -71,8 +68,6 @@ app.post("/post", async (req, res) => {
     await page.waitForTimeout(2000);
 
     const publishButton = page.locator("button:has-text('Publish')").first();
-
-    await publishButton.waitFor({ timeout: 60000 });
 
     await publishButton.click({
       force: true
@@ -95,7 +90,7 @@ app.post("/post", async (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  res.send("X Publisher running");
+  res.send("Publisher running");
 });
 
 app.listen(3000, () => {
